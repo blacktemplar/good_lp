@@ -1,5 +1,7 @@
 //! A solver that uses [highs](https://docs.rs/highs), a parallel C++ solver.
 
+use std::ffi::CStr;
+
 use highs::HighsModelStatus;
 
 use crate::solvers::{
@@ -70,20 +72,10 @@ impl HighsProblem {
     pub fn set_verbose(&mut self, verbose: bool) {
         self.verbose = verbose
     }
-}
 
-impl SolverModel for HighsProblem {
-    type Solution = HighsSolution;
-    type Error = ResolutionError;
-
-    fn solve(self) -> Result<Self::Solution, Self::Error> {
-        let verbose = self.verbose;
-        let mut model = self.into_inner();
-        if verbose {
-            model.set_option(&b"output_flag"[..], true);
-            model.set_option(&b"log_to_console"[..], true);
-            model.set_option(&b"log_dev_level"[..], 2);
-        }
+    /// Solves the inner model, this can be used in combination with `into_inner` to do highs
+    /// specific operations like setting options on the model before solving
+    pub fn solve_model(model: highs::Model) -> Result<HighsSolution, ResolutionError> {
         let solved = model.solve();
         match solved.status() {
             HighsModelStatus::NotSet => Err(ResolutionError::Other("NotSet")),
@@ -100,6 +92,22 @@ impl SolverModel for HighsProblem {
                 solution: solved.get_solution(),
             }),
         }
+    }
+}
+
+impl SolverModel for HighsProblem {
+    type Solution = HighsSolution;
+    type Error = ResolutionError;
+
+    fn solve(self) -> Result<Self::Solution, Self::Error> {
+        let verbose = self.verbose;
+        let mut model = self.into_inner();
+        if verbose {
+            model.set_option(&b"output_flag"[..], true);
+            model.set_option(&b"log_to_console"[..], true);
+            model.set_option(&b"log_dev_level"[..], 2);
+        }
+        Self::solve_model(model)
     }
 
     fn add_constraint(&mut self, constraint: Constraint) -> ConstraintReference {
